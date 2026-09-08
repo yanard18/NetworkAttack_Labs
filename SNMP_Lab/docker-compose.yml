@@ -1,0 +1,19 @@
+services:
+  snmp-agent:
+    image: debian:latest
+    container_name: snmp-target
+    volumes:
+      - ./snmpd.conf:/etc/snmp/snmpd.conf
+    command: >
+      sh -c "apt-get update && apt-get install -y snmpd && snmpd -f -LOw -C -c /etc/snmp/snmpd.conf"
+    ports:
+      - "161:161/udp"
+
+  zabbix-nms:
+    image: zabbix/zabbix-appliance:latest
+    container_name: zabbix-nms
+    environment:
+      - TZ=Europe/Istanbul
+    ports:
+      - "8888:80"
+      - "10051:10051"
