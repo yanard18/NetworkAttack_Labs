@@ -1,0 +1,11 @@
+services:
+  ftp-server:
+    build: .
+    container_name: ftp-lab-server
+    ports:
+      - "21:21"
+      - "20:20"
+      - "30000-30009:30000-30009"
+    environment:
+      - PASV_ADDRESS=127.0.0.1
+    restart: unless-stopped

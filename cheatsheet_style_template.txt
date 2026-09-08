@@ -1,0 +1,145 @@
+===============================================================================
+CHEATSHEET STYLE SPECIFICATION & GENERATOR TEMPLATE
+===============================================================================
+
+1. VISUAL DESIGN SPECIFICATIONS
+-------------------------------------------------------------------------------
+* Page Layout     : Standard Letter / A4 with 40pt margins
+* Header Banner   : Dark Navy RGB(0.1, 0.2, 0.4), White Helvetica-Bold 14pt
+* Section Titles  : Steel Blue RGB(0.2, 0.3, 0.5) Helvetica-Bold 11pt with underline
+* Command Column  : Courier-Bold 9pt (Left margin offset: 40pt, Width: 170pt)
+* Description Col : Helvetica 9pt (Left margin offset: 210pt, Color: Dark Gray RGB(0.2, 0.2, 0.2))
+* Line Spacing    : 14pt vertical stride per command entry
+* Style Constraints: Short, clean, zero emojis, high contrast, structured layout
+
+===============================================================================
+2. REUSABLE PYTHON GENERATOR SCRIPT TEMPLATE
+===============================================================================
+Save the Python code below as `build_cheatsheet.py` and replace `TITLE` and `DATA_SECTIONS`
+with your topic content (e.g., SSH, SQL, Docker, Linux, Nmap).
+
+```python
+#!/usr/bin/env python3
+import subprocess
+import os
+
+TITLE = "CHEATSHEET TITLE GOES HERE"
+OUTPUT_PDF = "cheatsheet.pdf"
+
+# Define your cheat sheet content here:
+DATA_SECTIONS = [
+    {
+        "title": "1. SECTION TITLE ONE",
+        "items": [
+            ("command_or_concept", "Short clear description of the item"),
+            ("another_command -flag", "Explanation of what this flag does"),
+        ]
+    },
+    {
+        "title": "2. SECTION TITLE TWO",
+        "items": [
+            ("example_cmd 127.0.0.1", "Description of target command usage"),
+        ]
+    }
+]
+
+def generate_postscript():
+    ps = []
+    ps.append("%!PS-Adobe-3.0")
+    ps.append("%%Title: " + TITLE)
+    ps.append("%%Pages: 1")
+    ps.append("/margin 40 def /pageheight 792 def /pagewidth 612 def")
+    ps.append("/ypos pageheight margin sub def")
+    
+    ps.append("""
+/drawHeader {
+    gsave
+    0.1 0.2 0.4 setrgbcolor
+    margin ypos 15 sub pagewidth margin 2 mul sub 30 rectfill
+    1 setgray
+    /Helvetica-Bold findfont 14 scalefont setfont
+    margin 10 add ypos 6 sub moveto
+    (TITLE_PLACEHOLDER) show
+    grestore
+    /ypos ypos 45 sub def
+} def
+
+/drawSection {
+    /stitle exch def
+    gsave
+    0.2 0.3 0.5 setrgbcolor
+    /Helvetica-Bold findfont 11 scalefont setfont
+    margin ypos 5 sub moveto
+    stitle show
+    margin ypos 7 sub moveto
+    pagewidth margin sub ypos 7 sub lineto
+    1 setlinewidth stroke
+    grestore
+    /ypos ypos 20 sub def
+} def
+
+/drawRow {
+    /col2 exch def
+    /col1 exch def
+    /ypos ypos 14 sub def
+    gsave
+    /Courier-Bold findfont 9 scalefont setfont
+    0 0 0 setrgbcolor
+    margin ypos moveto
+    col1 show
+    
+    /Helvetica findfont 9 scalefont setfont
+    0.2 0.2 0.2 setrgbcolor
+    margin 180 add ypos moveto
+    col2 show
+    grestore
+} def
+""".replace("TITLE_PLACEHOLDER", TITLE))
+
+    ps.append("%%Page: 1 1")
+    ps.append("drawHeader")
+
+    for sec in DATA_SECTIONS:
+        ps.append(f"({sec['title']}) drawSection")
+        for cmd, desc in sec["items"]:
+            # Escape parenthesis for PostScript syntax
+            cmd_esc = cmd.replace("(", "\\(").replace(")", "\\)")
+            desc_esc = desc.replace("(", "\\(").replace(")", "\\)")
+            ps.append(f"({cmd_esc}) ({desc_esc}) drawRow")
+        ps.append("/ypos ypos 10 sub def")
+
+    ps.append("showpage\n%%EOF")
+    return "\n".join(ps)
+
+def main():
+    ps_file = "/tmp/temp_cheatsheet.ps"
+    with open(ps_file, "w") as f:
+        f.write(generate_postscript())
+    
+    cmd = f"ps2pdf {ps_file} {OUTPUT_PDF}"
+    subprocess.run(cmd, shell=True, check=True)
+    print(f"Successfully compiled PDF: {OUTPUT_PDF}")
+
+if __name__ == "__main__":
+    main()
+```
+
+===============================================================================
+3. PROMPT TEMPLATE FOR LLM GENERATION
+===============================================================================
+Copy and paste this prompt when asking an AI model to generate a new cheatsheet:
+
+--- BEGIN PROMPT ---
+Generate a cheatsheet in the following exact technical specification:
+- Topic: [INSERT TOPIC HERE, e.g., SSH Hardening & Tunneling]
+- Format: PDF compiled via Python PostScript generator
+- Style:
+  * No emojis
+  * Short, clean, bulletproof execution descriptions
+  * Navy header banner RGB(0.1, 0.2, 0.4)
+  * Steel blue section dividers RGB(0.2, 0.3, 0.5)
+  * Courier-Bold command column, Helvetica 9pt description column
+  * Grouped logically into numbered sections
+
+Please output the completed Python script using `DATA_SECTIONS` schema that compiles directly with `ps2pdf`.
+--- END PROMPT ---
