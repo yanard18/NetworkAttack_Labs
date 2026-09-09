@@ -2,17 +2,11 @@
 
 ![Lab_Setup](media/image-2.png)
 
+### Install Docker
 
-## DNS Packet
-
-- id = txid
-- qr = Query/Response flag, '0' means query
-- qdcount = Question count, we are asking exactly one question
-- ancount = answer count
-- nscount = Number of RRs in the "Authority Section"
-- arcount = Additional record count
-- qd = question section (payload)
-
+```bash
+sudo docker-compose up -d
+```
 ## Normal DNS Query & Reply Behaviour
 
 To send dns request use `send_dns_query.py` or `dig` tool.
@@ -52,7 +46,6 @@ dig @8.8.8.8 A hera.ns.cloudflare.com elliott.ns.cloudflare.com +short
 1. Attacker query `12345.example.com` to recursive resolver.
 2. Attacker sends multiple reply, to try posion `example.com NS ns.attacker32.com`. If succeed, since `12345.example.com` not cached yet, the reply must be cached, and this will cause to overwrite the NS section for original `NS`
 3. From now on any `xxxxx.example.com` query will be anwered by our `ns.attacker32.com` server, so continue this attack won't restore the legitimate NS section.
-
 
 # Resources
 
