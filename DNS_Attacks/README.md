@@ -11,7 +11,6 @@ sudo docker-compose up -d
 
 To send dns request use `send_dns_query.py` or `dig` tool.
 
-![dns_query_cached](media/image.png)
 ![txid_and_src_ip](media/image-1.png)
 
 - SRC PORT: 33333

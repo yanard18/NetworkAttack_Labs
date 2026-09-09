@@ -1,0 +1,47 @@
+services:
+  attacker:
+    container_name: attacker
+    image: kalilinux/kali-rolling
+    cap_add: [NET_ADMIN]
+    networks:
+      red_net:
+        ipv4_address: 10.10.10.10
+    # Installs tools and adds a route to the blue_net via the firewall
+    entrypoint: /bin/sh -c "apt update && apt install -y nmap iproute2 tcpdump && ip route replace 10.10.20.0/24 via 10.10.10.254 && tail -f /dev/null"
+
+  firewall:
+    container_name: firewall
+    image: alpine
+    cap_add: [NET_ADMIN]
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      red_net:
+        ipv4_address: 10.10.10.254
+      blue_net:
+        ipv4_address: 10.10.20.254
+    # Installs iptables, flushes rules, and sets default FORWARD to ACCEPT
+    entrypoint: /bin/sh -c "apk add --no-cache iptables && iptables -F && iptables -P FORWARD ACCEPT && tail -f /dev/null"
+
+  target:
+    container_name: target
+    image: nginx:alpine
+    cap_add: [NET_ADMIN]
+    networks:
+      blue_net:
+        ipv4_address: 10.10.20.20
+    # Adds a route back to red_net via the firewall using built-in ip tool, then starts the web server
+    entrypoint: /bin/sh -c "ip route replace 10.10.10.0/24 via 10.10.20.254 && nginx -g 'daemon off;'"
+
+networks:
+  red_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
+  blue_net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.10.20.0/24
