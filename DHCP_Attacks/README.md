@@ -23,3 +23,12 @@ If UDP Broadcast passed, but DCHP_DISCOVER is blocked, this is **DHCP Snooping**
 4. Perform all tests both on Wi-Fi and Ethernet.
 
 Victim device use DCHP client (ex: `dhclient`), to send DHCP_DISCOVER broadcast, however modem block the broadcast message. So we can not reply with a DHCP_OFFER.
+
+## NAK
+
+`NAK` packet reset the DORA process
+
+To bypass:
+- Offer an IP that the real server won't contest
+- Impersonate the real server's `server_id` (DHCP server's IP).
+- Be fast
