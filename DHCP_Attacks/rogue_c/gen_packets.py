@@ -12,11 +12,11 @@ Run once (or whenever you change the server IP / offered IP / options):
 from scapy.all import Ether, IP, UDP, BOOTP, DHCP
 
 # --- configuration (must match the C side) ---
-SERVER_IP   = "192.168.1.200" # any free ip
-OFFERED_IP  = "192.168.1.150" # an IP not in the REAL POOL
-SUBNET_MASK = "255.255.255.0"
-ROUTER_IP   = "192.168.1.2"
-DNS_IP      = "192.168.1.53"
+SERVER_IP   = "10.10.99.99" # any free ip
+OFFERED_IP  = "10.10.99.101" # an IP not in the REAL POOL
+SUBNET_MASK = "255.255.0.0"
+ROUTER_IP   = "10.10.13.48"
+DNS_IP      = "8.8.8.8"
 LEASE_TIME  = 86400
 
 # Offsets in the final frame (see C code for explanation)

