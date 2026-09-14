@@ -1,0 +1,6 @@
+user
+admin
+ftpuser
+guess
+root
+test
